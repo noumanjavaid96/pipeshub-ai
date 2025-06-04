@@ -16,7 +16,6 @@ import type {
 import * as pdfjsLib from 'pdfjs-dist';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Tip, Popup, Highlight, AreaHighlight, PdfHighlighter } from 'react-pdf-highlighter';
-import { StyledCitationHighlightRenderer, processHighlightForCitation } from 'src/components/citation-highlighter/citation-highlighter';
 
 import { Box, CircularProgress } from '@mui/material';
 
@@ -101,6 +100,58 @@ const EnhancedPdfLoader = ({
   return children(pdfDocument);
 };
 
+const HighlightPopup: React.FC<HighlightPopupProps> = ({ comment }) =>
+  comment?.text ? (
+    <div className="Highlight__popup">
+      {comment.emoji} {comment.text}
+    </div>
+  ) : null;
+
+const processHighlight = (citation: DocumentContent): HighlightType | null => {
+  try {
+    // Process from metadata format
+    const boundingBox: BoundingBox[] = citation.metadata?.bounding_box;
+
+    if (!boundingBox || boundingBox.length !== 4) {
+      console.warn('Invalid bounding box:', boundingBox);
+      return null;
+    }
+
+    // Convert normalized coordinates to absolute positions
+    const PAGE_WIDTH = 967;
+    const PAGE_HEIGHT = 747.2272727272727;
+
+    const mainRect = {
+      x1: boundingBox[0].x * PAGE_WIDTH,
+      y1: boundingBox[0].y * PAGE_HEIGHT,
+      x2: boundingBox[2].x * PAGE_WIDTH,
+      y2: boundingBox[2].y * PAGE_HEIGHT,
+      width: PAGE_WIDTH,
+      height: PAGE_HEIGHT,
+      pageNumber: citation.metadata?.pageNum[0] || 1,
+    };
+
+    return {
+      content: {
+        text: citation.content || '',
+      },
+      position: {
+        boundingRect: mainRect,
+        rects: [mainRect],
+        pageNumber: mainRect.pageNumber,
+      },
+      comment: {
+        text: '',
+        emoji: '',
+      },
+      id: citation.metadata._id || citation.metadata._id || getNextId(),
+    };
+  } catch (error) {
+    console.error('Error processing highlight:', error);
+    return null;
+  }
+};
+
 const PdfHighlighterComp = ({
   pdfUrl = '',
   pdfBuffer = null,
@@ -119,11 +170,57 @@ const PdfHighlighterComp = ({
   const [processedCitations, setProcessedCitations] = useState<ProcessedCitation[]>([]);
 
   useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .Highlight__part {
+        cursor: pointer;
+        position: absolute;
+        background: rgba(0, 226, 143, 0.2);
+        transition: background 0.3s;
+      }
+
+      .Highlight--scrolledTo .Highlight__part {
+        background: rgba(0, 226, 143, 0.4);
+        position: relative;
+      }
+
+      .Highlight--scrolledTo .Highlight__part::before {
+        content: '[';
+        position: absolute;
+        top: 0;
+        left: -8px;
+        height: 100%;
+        color: #006400;
+        font-size: 20px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+      }
+
+      .Highlight--scrolledTo .Highlight__part::after {
+        content: ']';
+        position: absolute;
+        top: 0;
+        right: -8px;
+        height: 100%;
+        color: #006400;
+        font-size: 20px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+      }
+    `;
+    document.head.appendChild(style);
+    // eslint-disable-next-line no-void
+    return () => void document.head.removeChild(style);
+  }, []);
+
+  useEffect(() => {
     const processCitationsWithHighlights = () => {
       if (citations?.length > 0) {
         const processed = citations
           .map((citation) => {
-            const highlight = processHighlightForCitation(citation);
+            const highlight = processHighlight(citation);
             return {
               ...citation,
               highlight,
@@ -343,9 +440,9 @@ const PdfHighlighterComp = ({
                   screenshot,
                   isScrolledTo
                 ) => {
-                  const isHighlighted: boolean = 
+                  const isHighlighted: boolean =
                     Boolean(isScrolledTo) || Boolean(highlightCitation && highlightCitation.metadata._id === highlight.id);
-                  
+
                   const isTextHighlight = !highlight.content?.image;
                   const component = isTextHighlight ? (
                     <div
