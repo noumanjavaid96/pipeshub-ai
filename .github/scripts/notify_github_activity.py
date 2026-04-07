@@ -550,7 +550,7 @@ def main() -> None:
     repo = os.getenv('REPO_NAME', 'pipeshub-ai')
     
     # Get hours from environment variable, default to 24
-    hours = int(os.getenv('STARGAZERS_HOURS', '24'))
+    hours = int(os.getenv('STARGAZERS_HOURS') or '24')
     
     if not github_token:
         raise ValueError("PAT_GITHUB_TOKEN environment variable is required")
